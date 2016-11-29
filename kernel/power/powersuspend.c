@@ -5,18 +5,20 @@
  *
  * Modified by Jean-Pierre Rasquin <yank555.lu@gmail.com>
  *
- *  v1.1 - make powersuspend not depend on a userspace initiator anymore,
+ *  v1.1 - Make powersuspend not depend on a userspace initiator anymore,
  *         but use a hook in autosleep instead.
  *
- *  v1.2 - make kernel / userspace mode switchable
+ *  v1.2 - Make kernel / userspace mode switchable
  *
- *  v1.3 - add a hook in display panel driver as alternative kernel trigger
+ *  v1.3 - Add a hook in display panel driver as alternative kernel trigger
  *
- *  v1.4 - add a hybrid-kernel mode, accepting both kernel hooks (first wins)
+ *  v1.4 - Add a hybrid-kernel mode, accepting both kernel hooks (first wins)
  *
- *  v1.5 - fix hybrid-kernel mode cannot be set through sysfs
+ *  v1.5 - Fix hybrid-kernel mode cannot be set through sysfs
  *
- *  v1.6 - remove autosleep and hybrid modes (autosleep not working on shamu)
+ *  v1.6 - Remove autosleep and hybrid modes (autosleep not working on shamu)
+ *
+ *  v1.7 - Replaced deprecated singlethread workqueue with updated schedule_work
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -35,7 +37,7 @@
 #include <linux/workqueue.h>
 
 #define MAJOR_VERSION	1
-#define MINOR_VERSION	6
+#define MINOR_VERSION	7
 
 struct workqueue_struct *suspend_work_queue;
 
@@ -148,13 +150,13 @@ void set_power_suspend_state(int new_state)
 		pr_info("[POWERSUSPEND] state activated.\n");
 		#endif
 		state = new_state;
-		queue_work(suspend_work_queue, &power_suspend_work);
+		schedule_work(&power_suspend_work);
 	} else if (state == POWER_SUSPEND_ACTIVE && new_state == POWER_SUSPEND_INACTIVE) {
 		#ifdef CONFIG_POWERSUSPEND_DEBUG
 		pr_info("[POWERSUSPEND] state deactivated.\n");
 		#endif
 		state = new_state;
-		queue_work(suspend_work_queue, &power_resume_work);
+		schedule_work(&power_resume_work);
 	}
 	spin_unlock_irqrestore(&state_lock, irqflags);
 }
@@ -263,26 +265,21 @@ static int __init power_suspend_init(void)
 
 	int sysfs_result;
 
-        power_suspend_kobj = kobject_create_and_add("power_suspend",
-				kernel_kobj);
-        if (!power_suspend_kobj) {
-                pr_err("%s kobject create failed!\n", __FUNCTION__);
-                return -ENOMEM;
-        }
+	power_suspend_kobj = kobject_create_and_add("power_suspend",
+		kernel_kobj);
 
-        sysfs_result = sysfs_create_group(power_suspend_kobj,
-			&power_suspend_attr_group);
+	if (!power_suspend_kobj) {
+		pr_err("%s kobject create failed!\n", __FUNCTION__);
+	return -ENOMEM;
+	}
 
-        if (sysfs_result) {
-                pr_info("%s group create failed!\n", __FUNCTION__);
-                kobject_put(power_suspend_kobj);
-                return -ENOMEM;
-        }
+	sysfs_result = sysfs_create_group(power_suspend_kobj,
+		&power_suspend_attr_group);
 
-	suspend_work_queue = create_singlethread_workqueue("p-suspend");
-
-	if (suspend_work_queue == NULL) {
-		return -ENOMEM;
+	if (sysfs_result) {
+		pr_info("%s group create failed!\n", __FUNCTION__);
+		kobject_put(power_suspend_kobj);
+	return -ENOMEM;
 	}
 
 //	mode = POWER_SUSPEND_USERSPACE;	// Yank555.lu : Default to userspace mode
@@ -295,8 +292,6 @@ static void __exit power_suspend_exit(void)
 {
 	if (power_suspend_kobj != NULL)
 		kobject_put(power_suspend_kobj);
-
-	destroy_workqueue(suspend_work_queue);
 }
 
 core_initcall(power_suspend_init);
